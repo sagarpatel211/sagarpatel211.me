@@ -79,7 +79,7 @@ export default function CanvasContribMap({
     Array.from({ length: COLS }, (_, x) => initialGrid.map(row => row[x]))
   );
 
-  const dirRef = useRef<[number, number]>([1, 0]);
+  const dirRef = useRef<[number, number]>([0, 1]);
   const queueRef = useRef<[number, number][]>([]);
   const boostRef = useRef(false);
   const shakeIntensity = useRef(0);
@@ -187,38 +187,120 @@ export default function CanvasContribMap({
       img.src = sources[idx];
     });
 
+    // Add extra mosaic images (9x9) at grid Y=300 and spaced on X-axis
+    const extraMosaics = [
+      { src: '/ford.png', offsetX: 300 },
+      { src: '/gdls.png', offsetX: 310 },
+      { src: '/huawei.png', offsetX: 320 },
+      { src: '/windriver.jpg', offsetX: 330 },
+    ];
+    extraMosaics.forEach(({ src, offsetX }) => {
+      const img = new Image();
+      img.onload = () => {
+        const blocks2 = 15;
+        const sw2 = img.width / blocks2;
+        const sh2 = img.height / blocks2;
+        const startY = imageOffsetY + mosaicYOffset;
+        for (let ix = 0; ix < blocks2; ix++) {
+          for (let iy = 0; iy < blocks2; iy++) {
+            const sx2 = ix * sw2;
+            const sy2 = iy * sh2;
+            const dx2 = (offsetX + ix) * STEP;
+            const dy2 = (startY + iy) * STEP;
+            gctx.save();
+            gctx.beginPath();
+            gctx.moveTo(dx2 + RADIUS, dy2);
+            gctx.lineTo(dx2 + CELL - RADIUS, dy2);
+            gctx.quadraticCurveTo(dx2 + CELL, dy2, dx2 + CELL, dy2 + RADIUS);
+            gctx.lineTo(dx2 + CELL, dy2 + CELL - RADIUS);
+            gctx.quadraticCurveTo(
+              dx2 + CELL,
+              dy2 + CELL,
+              dx2 + CELL - RADIUS,
+              dy2 + CELL
+            );
+            gctx.lineTo(dx2 + RADIUS, dy2 + CELL);
+            gctx.quadraticCurveTo(dx2, dy2 + CELL, dx2, dy2 + CELL - RADIUS);
+            gctx.lineTo(dx2, dy2 + RADIUS);
+            gctx.quadraticCurveTo(dx2, dy2, dx2 + RADIUS, dy2);
+            gctx.closePath();
+            gctx.clip();
+            gctx.drawImage(img, sx2, sy2, sw2, sh2, dx2, dy2, CELL, CELL);
+            gctx.restore();
+          }
+        }
+        // update gridRef so new images are treated as blocks
+        for (let ix = 0; ix < blocks2; ix++) {
+          for (let iy = 0; iy < blocks2; iy++) {
+            gridRef.current[offsetX + ix][startY + iy] = '1';
+          }
+        }
+      };
+      img.src = src;
+    });
     setShowPopup(true);
   }, [initialGrid, imageSrc, imageOffsetX, imageOffsetY, mosaicYOffset]);
 
   useIconOverlay({
     canvasRef,
     targetRef: target,
-    icons: (['linkedin', 'github', 'email'] as const).map((key, idx) => {
-      const blocks = IMAGE_BLOCKS;
-      const spacing = 3;
-      const mosaicSpacing = blocks + spacing;
-      const hrefMap: Record<string, string> = {
-        linkedin: 'https://www.linkedin.com/in/sagarpatel211',
-        github: 'https://github.com/sagarpatel211',
-        email: 'mailto:2sagarpatel2@gmail.com',
-      };
-      const tooltipMap: Record<string, string> = {
-        linkedin: 'Visit my LinkedIn!',
-        github: 'Visit my GitHub!',
-        email: 'Email me: 2sagarpatel2@gmail.com',
-      };
-      return {
-        offsetX: [
-          imageOffsetX - mosaicSpacing,
-          imageOffsetX,
-          imageOffsetX + mosaicSpacing,
-        ][idx],
-        offsetY: imageOffsetY + mosaicYOffset,
-        size: blocks,
-        onClick: () => window.open(hrefMap[key], '_blank'),
-        tooltipText: tooltipMap[key],
-      };
-    }),
+    icons: [
+      ...(['linkedin', 'github', 'email'] as const).map((key, idx) => {
+        const blocks = IMAGE_BLOCKS;
+        const spacing = 3;
+        const mosaicSpacing = blocks + spacing;
+        const hrefMap: Record<string, string> = {
+          linkedin: 'https://www.linkedin.com/in/sagarpatel211',
+          github: 'https://github.com/sagarpatel211',
+          email: 'mailto:2sagarpatel2@gmail.com',
+        };
+        const tooltipMap: Record<string, string> = {
+          linkedin: 'Visit my LinkedIn!',
+          github: 'Visit my GitHub!',
+          email: 'Email me: 2sagarpatel2@gmail.com',
+        };
+        return {
+          offsetX: [
+            imageOffsetX - mosaicSpacing,
+            imageOffsetX,
+            imageOffsetX + mosaicSpacing,
+          ][idx],
+          offsetY: imageOffsetY + mosaicYOffset,
+          size: blocks,
+          onClick: () => window.open(hrefMap[key], '_blank'),
+          tooltipText: tooltipMap[key],
+        };
+      }),
+      // New hard-coded icons (9x9) starting at y=300 and spaced on x-axis
+      {
+        offsetX: 0,
+        offsetY: 0,
+        size: 15,
+        onClick: () => window.open('/ford.png', '_blank'),
+        tooltipText: 'ford',
+      },
+      {
+        offsetX: 310,
+        offsetY: 300,
+        size: 15,
+        onClick: () => window.open('/gdls.png', '_blank'),
+        tooltipText: 'gdls',
+      },
+      {
+        offsetX: 320,
+        offsetY: 300,
+        size: 15,
+        onClick: () => window.open('/huawei.png', '_blank'),
+        tooltipText: 'huawei',
+      },
+      {
+        offsetX: 330,
+        offsetY: 300,
+        size: 15,
+        onClick: () => window.open('/windriver.jpg', '_blank'),
+        tooltipText: 'windriver',
+      },
+    ],
     setTooltip,
   });
 

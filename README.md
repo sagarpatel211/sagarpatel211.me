@@ -2,13 +2,19 @@
 
 Visit my portfolio website at [https://www.sagarpatel211.me](https://www.sagarpatel211.me)
 
+## To Do
+
+- [ ] draw all icons like frameworks and langs and job experience
+- [ ] Optimize the code
+
+
 ## Preview
 
-![alt text](image/1.png)
+![alt text](images/1.png)
 
-![alt text](image/2.png)
+![alt text](images/2.png)
 
-![alt text](image/3.png)
+![alt text](images/3.png)
 
 ## Tech Stack
 
