@@ -1,4 +1,5 @@
-const SCALE = 1;
+const SCALE =
+  typeof window !== 'undefined' && window.innerWidth < 640 ? 0.25 : 1;
 export const COLS = 500;
 export const ROWS = 500;
 const BASE_CELL = 12;

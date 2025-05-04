@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useRef, useState, useLayoutEffect } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   COLS,
   ROWS,
@@ -20,6 +20,7 @@ import {
 } from '@/lib/constants';
 import { PALETTE, SNAKE_COL } from '@/lib/colors';
 import { useIconOverlay } from '@/lib/icon-overlay';
+import { DM_Sans } from 'next/font/google';
 
 type Pos = { x: number; y: number };
 
@@ -58,6 +59,9 @@ const roundRect = (
   ctx.fill();
 };
 
+const dmSans = DM_Sans({ subsets: ['latin'], weight: ['400', '500', '700'] });
+const isDev = process.env.NODE_ENV === 'development';
+
 export default function CanvasContribMap({
   grid: initialGrid,
   imageSrc,
@@ -65,17 +69,12 @@ export default function CanvasContribMap({
   grid: string[][];
   imageSrc?: string;
 }) {
+  const fontClass = dmSans.className;
+  const [showPopup, setShowPopup] = useState(false);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const gridCanvasRef = useRef<HTMLCanvasElement>(null);
   const minimapCanvasRef = useRef<HTMLCanvasElement>(null);
   const dpr = typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1;
-  const [mobileScale, setMobileScale] = useState(1);
-  useEffect(() => {
-    const updateScale = () => setMobileScale(window.innerWidth < 640 ? 0.6 : 1);
-    updateScale();
-    window.addEventListener('resize', updateScale);
-    return () => window.removeEventListener('resize', updateScale);
-  }, []);
   const gridRef = useRef<string[][]>(
     Array.from({ length: COLS }, (_, x) => initialGrid.map(row => row[x]))
   );
@@ -85,7 +84,6 @@ export default function CanvasContribMap({
   const boostRef = useRef(false);
   const shakeIntensity = useRef(0);
   const snakeYOffset = 20;
-  const imgRef = useRef<HTMLImageElement | null>(null);
   const initialHead: Pos = {
     x: Math.floor(COLS / 2),
     y: Math.floor(ROWS / 2) + snakeYOffset,
@@ -94,6 +92,7 @@ export default function CanvasContribMap({
   const lengthRef = useRef(MAX_LEN);
   const target = useRef<Pos>({ ...initialHead });
   const smooth = useRef<Pos>({ ...initialHead });
+  const imgRef = useRef<HTMLImageElement | null>(null);
 
   const imageOffsetX = Math.floor((COLS - IMAGE_BLOCKS) / 2);
   const imageOffsetY = Math.floor((ROWS - IMAGE_BLOCKS) / 2);
@@ -105,11 +104,16 @@ export default function CanvasContribMap({
     y: number;
     text?: string;
   }>({ visible: false, x: 0, y: 0, text: '' });
-  const [welcomeVisible, setWelcomeVisible] = useState(true);
-  const [gridReady, setGridReady] = useState(false);
-  const paintedRef = useRef(false);
 
-  useLayoutEffect(() => {
+  const [isEditing, setIsEditing] = useState(false);
+  const [selectedColorKey, setSelectedColorKey] = useState<string>('1');
+  const [isPainting, setIsPainting] = useState(false);
+  const [toast, setToast] = useState<{ visible: boolean; message: string }>({
+    visible: false,
+    message: '',
+  });
+
+  useEffect(() => {
     const off = document.createElement('canvas');
     off.width = COLS * STEP;
     off.height = ROWS * STEP;
@@ -182,6 +186,8 @@ export default function CanvasContribMap({
       };
       img.src = sources[idx];
     });
+
+    setShowPopup(true);
   }, [initialGrid, imageSrc, imageOffsetX, imageOffsetY, mosaicYOffset]);
 
   useIconOverlay({
@@ -265,12 +271,10 @@ export default function CanvasContribMap({
   }, [dpr]);
 
   useEffect(() => {
-    if (welcomeVisible) return;
     const tick = () => {
+      if (showPopup || isEditing) return;
       const reps = boostRef.current ? BOOST_MULT : 1;
-
       shakeIntensity.current = boostRef.current ? 2 + Math.random() * 2 : 0;
-
       for (let i = 0; i < reps; i++) {
         if (queueRef.current.length) {
           dirRef.current = queueRef.current.shift()!;
@@ -356,6 +360,21 @@ export default function CanvasContribMap({
     };
 
     const down = (e: KeyboardEvent) => {
+      if (isEditing) {
+        const dir = DIRS[e.key];
+        if (!dir) return;
+        e.preventDefault();
+        const [dx, dy] = dir;
+        const vw = Math.floor(window.innerWidth / STEP);
+        const vh = Math.floor(window.innerHeight / STEP);
+        let tx = target.current.x + dx;
+        let ty = target.current.y + dy;
+        tx = clamp(tx, 0, COLS - vw);
+        ty = clamp(ty, 0, ROWS - vh);
+        target.current = { x: tx, y: ty };
+        smooth.current = { x: tx, y: ty };
+        return;
+      }
       if (e.code === 'Space') {
         boostRef.current = true;
       } else {
@@ -375,23 +394,18 @@ export default function CanvasContribMap({
 
     window.addEventListener('keydown', down);
     window.addEventListener('keyup', up);
-
     const id = setInterval(tick, TICK);
     return () => {
       clearInterval(id);
       window.removeEventListener('keydown', down);
       window.removeEventListener('keyup', up);
     };
-  }, [welcomeVisible, imageOffsetX, imageOffsetY]);
+  }, [imageOffsetX, imageOffsetY, showPopup, isEditing]);
 
   useEffect(() => {
     const canvas = canvasRef.current!;
     const ctx = canvas.getContext('2d')!;
     const draw = () => {
-      if (!paintedRef.current) {
-        paintedRef.current = true;
-        setGridReady(true);
-      }
       smooth.current.x = lerp(smooth.current.x, target.current.x, LERP);
       smooth.current.y = lerp(smooth.current.y, target.current.y, LERP);
 
@@ -416,17 +430,19 @@ export default function CanvasContribMap({
         );
       }
 
-      const segs = snakeRef.current;
-      const len = segs.length;
-      for (let i = 0; i < len; i++) {
-        const seg = segs[i];
-        const t = i / (len - 1);
-        const scale = lerp(1, MIN_TAIL_SCALE, t);
-        const size = CELL * scale;
-        const o = (CELL - size) / 2;
-        const dx = (seg.x - ox) * STEP + o;
-        const dy = (seg.y - oy) * STEP + o;
-        roundRect(ctx, dx, dy, size, size, RADIUS, SNAKE_COL);
+      if (!isEditing) {
+        const segs = snakeRef.current;
+        const len = segs.length;
+        for (let i = 0; i < len; i++) {
+          const seg = segs[i];
+          const t = i / (len - 1);
+          const scale = lerp(1, MIN_TAIL_SCALE, t);
+          const size = CELL * scale;
+          const o = (CELL - size) / 2;
+          const dx = (seg.x - ox) * STEP + o;
+          const dy = (seg.y - oy) * STEP + o;
+          roundRect(ctx, dx, dy, size, size, RADIUS, SNAKE_COL);
+        }
       }
 
       const mx = window.innerWidth - MINIMAP_SIZE - MINIMAP_PADDING;
@@ -438,7 +454,7 @@ export default function CanvasContribMap({
         ctx.drawImage(minimapCanvasRef.current, mx, my);
       }
 
-      const head = segs[0];
+      const head = snakeRef.current[0];
       roundRect(
         ctx,
         mx + head.x * MINIMAP_SCALE,
@@ -461,33 +477,152 @@ export default function CanvasContribMap({
       requestAnimationFrame(draw);
     };
     requestAnimationFrame(draw);
-  }, [dpr]);
+  }, [dpr, isEditing]);
+
+  useEffect(() => {
+    if (!isEditing) return;
+    const canvas = canvasRef.current!;
+    const handleMouseDown = (e: MouseEvent) => {
+      setIsPainting(true);
+      paintCell(e);
+    };
+    const handleMouseMove = (e: MouseEvent) => {
+      if (isPainting) paintCell(e);
+    };
+    const handleMouseUp = () => setIsPainting(false);
+    const paintCell = (e: MouseEvent) => {
+      const rect = canvas.getBoundingClientRect();
+      const mx = e.clientX - rect.left;
+      const my = e.clientY - rect.top;
+      const cellX = Math.floor(mx / STEP);
+      const cellY = Math.floor(my / STEP);
+      const worldX = target.current.x + cellX;
+      const worldY = target.current.y + cellY;
+      gridRef.current[worldX][worldY] = selectedColorKey;
+      const gctx = gridCanvasRef.current!.getContext('2d')!;
+      const px = worldX * STEP;
+      const py = worldY * STEP;
+      roundRect(gctx, px, py, CELL, CELL, RADIUS, PALETTE[selectedColorKey]);
+      const mctx = minimapCanvasRef.current!.getContext('2d')!;
+      mctx.fillStyle = PALETTE[selectedColorKey];
+      const mx2 = worldX * MINIMAP_SCALE;
+      const my2 = worldY * MINIMAP_SCALE;
+      mctx.fillRect(mx2, my2, MINIMAP_SCALE * 2, MINIMAP_SCALE * 2);
+    };
+    canvas.addEventListener('mousedown', handleMouseDown);
+    canvas.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+    return () => {
+      canvas.removeEventListener('mousedown', handleMouseDown);
+      canvas.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [isEditing, isPainting, selectedColorKey]);
+
+  // touch gesture support for mobile: pan in edit mode & swipe to move snake
+  useEffect(() => {
+    let startX: number, startY: number;
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const handleTouchStart = (e: TouchEvent) => {
+      if (e.touches.length === 1) {
+        startX = e.touches[0].clientX;
+        startY = e.touches[0].clientY;
+      }
+    };
+    const handleTouchMove = (e: TouchEvent) => {
+      if (isEditing && e.touches.length === 1) {
+        const touch = e.touches[0];
+        const dx = touch.clientX - startX;
+        const dy = touch.clientY - startY;
+        const cellDx = Math.round(dx / STEP);
+        const cellDy = Math.round(dy / STEP);
+        const vw = Math.floor(window.innerWidth / STEP);
+        const vh = Math.floor(window.innerHeight / STEP);
+        const tx = clamp(target.current.x - cellDx, 0, COLS - vw);
+        const ty = clamp(target.current.y - cellDy, 0, ROWS - vh);
+        target.current = { x: tx, y: ty };
+        smooth.current = { x: tx, y: ty };
+        // reset start for continuous pan
+        startX = touch.clientX;
+        startY = touch.clientY;
+      }
+    };
+    const handleTouchEnd = (e: TouchEvent) => {
+      if (!isEditing) {
+        const touch = e.changedTouches[0];
+        const dx = touch.clientX - startX;
+        const dy = touch.clientY - startY;
+        const absDx = Math.abs(dx);
+        const absDy = Math.abs(dy);
+        let dir: [number, number] | null = null;
+        if (absDx > absDy && absDx > 20) dir = dx > 0 ? [1, 0] : [-1, 0];
+        else if (absDy > absDx && absDy > 20) dir = dy > 0 ? [0, 1] : [0, -1];
+        if (dir) {
+          const last =
+            queueRef.current[queueRef.current.length - 1] || dirRef.current;
+          if (!(dir[0] === -last[0] && dir[1] === -last[1])) {
+            queueRef.current.push(dir);
+            queueRef.current = queueRef.current.slice(-3);
+          }
+        }
+      }
+    };
+    canvas.addEventListener('touchstart', handleTouchStart, { passive: true });
+    canvas.addEventListener('touchmove', handleTouchMove, { passive: true });
+    canvas.addEventListener('touchend', handleTouchEnd);
+    return () => {
+      canvas.removeEventListener('touchstart', handleTouchStart, {
+        passive: true,
+      });
+      canvas.removeEventListener('touchmove', handleTouchMove, {
+        passive: true,
+      });
+      canvas.removeEventListener('touchend', handleTouchEnd);
+    };
+  }, [isEditing]);
+
+  const saveMap = async () => {
+    const blocks = IMAGE_BLOCKS;
+    const spacing = 3;
+    const mosaicSpacing = blocks + spacing;
+    const offsetXs = [
+      imageOffsetX - mosaicSpacing,
+      imageOffsetX,
+      imageOffsetX + mosaicSpacing,
+    ];
+    const y0 = imageOffsetY + mosaicYOffset;
+    const rows = Array.from({ length: ROWS }, (_, y) =>
+      gridRef.current
+        .map((col, x) => {
+          if (
+            offsetXs.some(offX => x >= offX && x < offX + blocks) &&
+            y >= y0 &&
+            y < y0 + blocks
+          ) {
+            return '0';
+          }
+          return col[y];
+        })
+        .join('')
+    );
+    try {
+      await fetch('/api/save-map', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ grid: rows }),
+      });
+      setToast({ visible: true, message: 'File saved!' });
+      setTimeout(() => setToast({ visible: false, message: '' }), 3000);
+      setIsEditing(false);
+    } catch {
+      setToast({ visible: true, message: 'Save failed.' });
+      setTimeout(() => setToast({ visible: false, message: '' }), 3000);
+    }
+  };
 
   return (
-    <div
-      className="relative"
-      style={{
-        width: `${100 / mobileScale}%`,
-        height: `${100 / mobileScale}%`,
-        overflow: 'hidden',
-      }}
-    >
-      {gridReady && welcomeVisible && (
-        <div className="absolute inset-0 bg-black/95 z-50 flex flex-col items-center justify-center pointer-events-auto">
-          <div className="bg-white/20 backdrop-blur-lg p-6 rounded-lg shadow-lg text-center max-w-xs">
-            <p className="text-white text-base">
-              Welcome to my site! Feel free to slither around using the arrow
-              keys. Hold space to boost. Hover over elements and eat them!
-            </p>
-            <button
-              onClick={() => setWelcomeVisible(false)}
-              className="mt-4 px-4 py-2 bg-white/30 text-white rounded-lg hover:bg-white/40 mx-auto"
-            >
-              Got it!
-            </button>
-          </div>
-        </div>
-      )}
+    <div className={`relative ${fontClass}`}>
       <canvas ref={canvasRef} className="block w-full h-full bg-[#0d1117]" />
       {tooltip.visible && (
         <div
@@ -495,6 +630,65 @@ export default function CanvasContribMap({
           style={{ left: tooltip.x, top: tooltip.y }}
         >
           {tooltip.text}
+        </div>
+      )}
+      {showPopup && (
+        <div
+          className="absolute bottom-8 left-1/2 transform -translate-x-1/2 bg-[#2e2e2e]/70 backdrop-blur-sm text-white text-lg px-4 py-4 rounded-lg shadow-xl flex flex-col items-center space-y-4 sm:flex-row sm:space-y-0 sm:space-x-4 w-11/12 max-w-sm"
+          style={{ zIndex: 20 }}
+        >
+          <span className="leading-snug text-center">
+            Welcome to my site! Feel free to move around and eat blocks using
+            the arrow keys. Hold space to boost. Hover over elements!
+          </span>
+          <button
+            className="px-4 py-2 bg-white/20 backdrop-blur-sm border border-white/30 text-white rounded-md hover:bg-white/30 transition"
+            onClick={() => setShowPopup(false)}
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
+      {isDev && !isEditing && (
+        <button
+          className="absolute top-4 right-4 px-2 py-1 bg-gray-800 text-white rounded z-50"
+          onClick={() => setIsEditing(true)}
+        >
+          Edit
+        </button>
+      )}
+      {isDev && isEditing && (
+        <div className="absolute top-4 right-4 flex space-x-2 z-50">
+          <button
+            className="px-2 py-1 bg-green-600 text-white rounded"
+            onClick={saveMap}
+          >
+            Save
+          </button>
+          <button
+            className="px-2 py-1 bg-red-600 text-white rounded"
+            onClick={() => window.location.reload()}
+          >
+            Cancel
+          </button>
+        </div>
+      )}
+      {isDev && isEditing && (
+        <div className="absolute top-16 right-0 bottom-0 w-20 bg-[#0d1117]/80 p-2 flex flex-col items-center space-y-2 overflow-auto z-50">
+          {Object.entries(PALETTE).map(([key, color]) => (
+            <div
+              key={key}
+              className={`w-10 h-10 rounded cursor-pointer border-2 ${selectedColorKey === key ? 'border-white' : 'border-transparent'}`}
+              style={{ backgroundColor: color }}
+              onClick={() => setSelectedColorKey(key)}
+            />
+          ))}
+        </div>
+      )}
+
+      {toast.visible && (
+        <div className="fixed top-4 right-4 bg-green-600 text-white px-4 py-2 rounded shadow-lg z-50">
+          {toast.message}
         </div>
       )}
     </div>
