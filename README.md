@@ -10,7 +10,6 @@ Visit my portfolio website at [https://www.sagarpatel211.me](https://www.sagarpa
 
 ![alt text](image/3.png)
 
-
 ## Tech Stack
 
 - Next.js
@@ -23,7 +22,7 @@ Visit my portfolio website at [https://www.sagarpatel211.me](https://www.sagarpa
 First, run the development server:
 
 ```bash
-pnpm install 
+pnpm install
 pnpm dev
 ```
 

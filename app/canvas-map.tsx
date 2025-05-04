@@ -572,12 +572,8 @@ export default function CanvasContribMap({
     canvas.addEventListener('touchmove', handleTouchMove, { passive: true });
     canvas.addEventListener('touchend', handleTouchEnd);
     return () => {
-      canvas.removeEventListener('touchstart', handleTouchStart, {
-        passive: true,
-      });
-      canvas.removeEventListener('touchmove', handleTouchMove, {
-        passive: true,
-      });
+      canvas.removeEventListener('touchstart', handleTouchStart);
+      canvas.removeEventListener('touchmove', handleTouchMove);
       canvas.removeEventListener('touchend', handleTouchEnd);
     };
   }, [isEditing]);
