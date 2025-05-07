@@ -6,7 +6,7 @@ Visit my portfolio website at [https://www.sagarpatel211.me](https://www.sagarpa
 
 - [ ] draw all icons like frameworks and langs and job experience
 - [ ] Optimize the code
-
+- [ ] Add education section
 
 ## Preview
 

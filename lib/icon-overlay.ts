@@ -3,7 +3,7 @@ import { STEP } from '@/lib/constants';
 
 type Pos = { x: number; y: number };
 
-type IconConfig = {
+export type IconConfig = {
   offsetX: number;
   offsetY: number;
   size: number;
@@ -15,12 +15,7 @@ export function useIconOverlay(params: {
   canvasRef: React.RefObject<HTMLCanvasElement | null>;
   targetRef: React.MutableRefObject<Pos>;
   icons: IconConfig[];
-  setTooltip: (tip: {
-    visible: boolean;
-    x: number;
-    y: number;
-    text?: string;
-  }) => void;
+  setTooltip: (tip: { visible: boolean; x: number; y: number; text?: string }) => void;
 }) {
   const { canvasRef, targetRef, icons, setTooltip } = params;
 

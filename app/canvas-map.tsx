@@ -20,7 +20,7 @@ import {
 } from '@/lib/constants';
 import { PALETTE, SNAKE_COL } from '@/lib/colors';
 import { useIconOverlay } from '@/lib/icon-overlay';
-import { DM_Sans } from 'next/font/google';
+import { extraMosaics, getExtraOverlayIcons } from '@/lib/extra-mosaics';
 
 type Pos = { x: number; y: number };
 
@@ -32,8 +32,7 @@ const DIRS: Record<string, [number, number]> = {
 };
 
 const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
-const clamp = (v: number, min: number, max: number) =>
-  Math.max(min, Math.min(max, v));
+const clamp = (v: number, min: number, max: number) => Math.max(min, Math.min(max, v));
 
 const roundRect = (
   ctx: CanvasRenderingContext2D,
@@ -59,25 +58,15 @@ const roundRect = (
   ctx.fill();
 };
 
-const dmSans = DM_Sans({ subsets: ['latin'], weight: ['400', '500', '700'] });
 const isDev = process.env.NODE_ENV === 'development';
 
-export default function CanvasContribMap({
-  grid: initialGrid,
-  imageSrc,
-}: {
-  grid: string[][];
-  imageSrc?: string;
-}) {
-  const fontClass = dmSans.className;
+export default function CanvasContribMap({ grid: initialGrid, imageSrc }: { grid: string[][]; imageSrc?: string }) {
   const [showPopup, setShowPopup] = useState(false);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const gridCanvasRef = useRef<HTMLCanvasElement>(null);
   const minimapCanvasRef = useRef<HTMLCanvasElement>(null);
   const dpr = typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1;
-  const gridRef = useRef<string[][]>(
-    Array.from({ length: COLS }, (_, x) => initialGrid.map(row => row[x]))
-  );
+  const gridRef = useRef<string[][]>(Array.from({ length: COLS }, (_, x) => initialGrid.map(row => row[x])));
 
   const dirRef = useRef<[number, number]>([0, 1]);
   const queueRef = useRef<[number, number][]>([]);
@@ -113,6 +102,8 @@ export default function CanvasContribMap({
     message: '',
   });
 
+  const [hoverCell, setHoverCell] = useState<{ x: number; y: number } | null>(null);
+
   useEffect(() => {
     const off = document.createElement('canvas');
     off.width = COLS * STEP;
@@ -122,26 +113,14 @@ export default function CanvasContribMap({
 
     for (let x = 0; x < COLS; x++) {
       for (let y = 0; y < ROWS; y++) {
-        roundRect(
-          gctx,
-          x * STEP,
-          y * STEP,
-          CELL,
-          CELL,
-          RADIUS,
-          PALETTE[gridRef.current[x][y]]
-        );
+        roundRect(gctx, x * STEP, y * STEP, CELL, CELL, RADIUS, PALETTE[gridRef.current[x][y]]);
       }
     }
 
     const blocks = IMAGE_BLOCKS;
     const spacing = 3;
     const mosaicSpacing = blocks + spacing;
-    const offsetXs = [
-      imageOffsetX - mosaicSpacing,
-      imageOffsetX,
-      imageOffsetX + mosaicSpacing,
-    ];
+    const offsetXs = [imageOffsetX - mosaicSpacing, imageOffsetX, imageOffsetX + mosaicSpacing];
     const sources = ['/linkedin.png', imageSrc || '/github.png', '/email.png'];
     offsetXs.forEach((offsetX, idx) => {
       const img = new Image();
@@ -161,12 +140,7 @@ export default function CanvasContribMap({
             gctx.lineTo(dx + CELL - RADIUS, dy);
             gctx.quadraticCurveTo(dx + CELL, dy, dx + CELL, dy + RADIUS);
             gctx.lineTo(dx + CELL, dy + CELL - RADIUS);
-            gctx.quadraticCurveTo(
-              dx + CELL,
-              dy + CELL,
-              dx + CELL - RADIUS,
-              dy + CELL
-            );
+            gctx.quadraticCurveTo(dx + CELL, dy + CELL, dx + CELL - RADIUS, dy + CELL);
             gctx.lineTo(dx + RADIUS, dy + CELL);
             gctx.quadraticCurveTo(dx, dy + CELL, dx, dy + CELL - RADIUS);
             gctx.lineTo(dx, dy + RADIUS);
@@ -177,48 +151,30 @@ export default function CanvasContribMap({
             gctx.restore();
           }
         }
-        for (let ix = 0; ix < blocks; ix++) {
-          for (let iy = 0; iy < blocks; iy++) {
-            gridRef.current[offsetX + ix][imageOffsetY + mosaicYOffset + iy] =
-              '1';
-          }
-        }
       };
       img.src = sources[idx];
     });
 
-    // Add extra mosaic images (9x9) at grid Y=300 and spaced on X-axis
-    const extraMosaics = [
-      { src: '/ford.png', offsetX: 300 },
-      { src: '/gdls.png', offsetX: 310 },
-      { src: '/huawei.png', offsetX: 320 },
-      { src: '/windriver.jpg', offsetX: 330 },
-    ];
-    extraMosaics.forEach(({ src, offsetX }) => {
+    extraMosaics.forEach(({ src, offsetX, offsetY, blocks }) => {
       const img = new Image();
       img.onload = () => {
-        const blocks2 = 15;
-        const sw2 = img.width / blocks2;
-        const sh2 = img.height / blocks2;
-        const startY = imageOffsetY + mosaicYOffset;
-        for (let ix = 0; ix < blocks2; ix++) {
-          for (let iy = 0; iy < blocks2; iy++) {
+        const heightBlocks = blocks;
+        const widthBlocks = Math.round((img.width / img.height) * heightBlocks);
+        const sw2 = img.width / widthBlocks;
+        const sh2 = img.height / heightBlocks;
+        for (let ix = 0; ix < widthBlocks; ix++) {
+          for (let iy = 0; iy < heightBlocks; iy++) {
             const sx2 = ix * sw2;
             const sy2 = iy * sh2;
             const dx2 = (offsetX + ix) * STEP;
-            const dy2 = (startY + iy) * STEP;
+            const dy2 = (offsetY + iy) * STEP;
             gctx.save();
             gctx.beginPath();
             gctx.moveTo(dx2 + RADIUS, dy2);
             gctx.lineTo(dx2 + CELL - RADIUS, dy2);
             gctx.quadraticCurveTo(dx2 + CELL, dy2, dx2 + CELL, dy2 + RADIUS);
             gctx.lineTo(dx2 + CELL, dy2 + CELL - RADIUS);
-            gctx.quadraticCurveTo(
-              dx2 + CELL,
-              dy2 + CELL,
-              dx2 + CELL - RADIUS,
-              dy2 + CELL
-            );
+            gctx.quadraticCurveTo(dx2 + CELL, dy2 + CELL, dx2 + CELL - RADIUS, dy2 + CELL);
             gctx.lineTo(dx2 + RADIUS, dy2 + CELL);
             gctx.quadraticCurveTo(dx2, dy2 + CELL, dx2, dy2 + CELL - RADIUS);
             gctx.lineTo(dx2, dy2 + RADIUS);
@@ -229,10 +185,9 @@ export default function CanvasContribMap({
             gctx.restore();
           }
         }
-        // update gridRef so new images are treated as blocks
-        for (let ix = 0; ix < blocks2; ix++) {
-          for (let iy = 0; iy < blocks2; iy++) {
-            gridRef.current[offsetX + ix][startY + iy] = '1';
+        for (let ix = 0; ix < widthBlocks; ix++) {
+          for (let iy = 0; iy < heightBlocks; iy++) {
+            gridRef.current[offsetX + ix][offsetY + iy] = '1';
           }
         }
       };
@@ -260,46 +215,14 @@ export default function CanvasContribMap({
           email: 'Email me: 2sagarpatel2@gmail.com',
         };
         return {
-          offsetX: [
-            imageOffsetX - mosaicSpacing,
-            imageOffsetX,
-            imageOffsetX + mosaicSpacing,
-          ][idx],
+          offsetX: [imageOffsetX - mosaicSpacing, imageOffsetX, imageOffsetX + mosaicSpacing][idx],
           offsetY: imageOffsetY + mosaicYOffset,
           size: blocks,
           onClick: () => window.open(hrefMap[key], '_blank'),
           tooltipText: tooltipMap[key],
         };
       }),
-      // New hard-coded icons (9x9) starting at y=300 and spaced on x-axis
-      {
-        offsetX: 0,
-        offsetY: 0,
-        size: 15,
-        onClick: () => window.open('/ford.png', '_blank'),
-        tooltipText: 'ford',
-      },
-      {
-        offsetX: 310,
-        offsetY: 300,
-        size: 15,
-        onClick: () => window.open('/gdls.png', '_blank'),
-        tooltipText: 'gdls',
-      },
-      {
-        offsetX: 320,
-        offsetY: 300,
-        size: 15,
-        onClick: () => window.open('/huawei.png', '_blank'),
-        tooltipText: 'huawei',
-      },
-      {
-        offsetX: 330,
-        offsetY: 300,
-        size: 15,
-        onClick: () => window.open('/windriver.jpg', '_blank'),
-        tooltipText: 'windriver',
-      },
+      ...getExtraOverlayIcons(),
     ],
     setTooltip,
   });
@@ -367,11 +290,7 @@ export default function CanvasContribMap({
         const nx = (head.x + dx + COLS) % COLS;
         const ny = (head.y + dy + ROWS) % ROWS;
 
-        if (
-          gridRef.current[nx][ny] !== '0' &&
-          gridRef.current[nx][ny] !== '-'
-        ) {
-          lengthRef.current++;
+        if (gridRef.current[nx][ny] !== '0' && gridRef.current[nx][ny] !== '-') {
           gridRef.current[nx][ny] = '-';
           const gctx = gridCanvasRef.current!.getContext('2d')!;
           const px = nx * STEP;
@@ -396,12 +315,7 @@ export default function CanvasContribMap({
             gctx.lineTo(px + CELL - RADIUS, py);
             gctx.quadraticCurveTo(px + CELL, py, px + CELL, py + RADIUS);
             gctx.lineTo(px + CELL, py + CELL - RADIUS);
-            gctx.quadraticCurveTo(
-              px + CELL,
-              py + CELL,
-              px + CELL - RADIUS,
-              py + CELL
-            );
+            gctx.quadraticCurveTo(px + CELL, py + CELL, px + CELL - RADIUS, py + CELL);
             gctx.lineTo(px + RADIUS, py + CELL);
             gctx.quadraticCurveTo(px, py + CELL, px, py + CELL - RADIUS);
             gctx.lineTo(px, py + RADIUS);
@@ -432,11 +346,9 @@ export default function CanvasContribMap({
         let tx = target.current.x;
         let ty = target.current.y;
         if (nx - tx < MARGIN) tx = clamp(nx - MARGIN, 0, COLS - vw);
-        if (nx - tx > vw - MARGIN - 1)
-          tx = clamp(nx - (vw - MARGIN - 1), 0, COLS - vw);
+        if (nx - tx > vw - MARGIN - 1) tx = clamp(nx - (vw - MARGIN - 1), 0, COLS - vw);
         if (ny - ty < MARGIN) ty = clamp(ny - MARGIN, 0, ROWS - vh);
-        if (ny - ty > vh - MARGIN - 1)
-          ty = clamp(ny - (vh - MARGIN - 1), 0, ROWS - vh);
+        if (ny - ty > vh - MARGIN - 1) ty = clamp(ny - (vh - MARGIN - 1), 0, ROWS - vh);
         target.current = { x: tx, y: ty };
       }
     };
@@ -462,8 +374,7 @@ export default function CanvasContribMap({
       } else {
         const dir = DIRS[e.key];
         if (!dir) return;
-        const last =
-          queueRef.current[queueRef.current.length - 1] || dirRef.current;
+        const last = queueRef.current[queueRef.current.length - 1] || dirRef.current;
         if (dir[0] === -last[0] && dir[1] === -last[1]) return;
         queueRef.current.push(dir);
         queueRef.current = queueRef.current.slice(-3);
@@ -601,7 +512,6 @@ export default function CanvasContribMap({
     };
   }, [isEditing, isPainting, selectedColorKey]);
 
-  // touch gesture support for mobile: pan in edit mode & swipe to move snake
   useEffect(() => {
     let startX: number, startY: number;
     const canvas = canvasRef.current;
@@ -625,7 +535,6 @@ export default function CanvasContribMap({
         const ty = clamp(target.current.y - cellDy, 0, ROWS - vh);
         target.current = { x: tx, y: ty };
         smooth.current = { x: tx, y: ty };
-        // reset start for continuous pan
         startX = touch.clientX;
         startY = touch.clientY;
       }
@@ -641,8 +550,7 @@ export default function CanvasContribMap({
         if (absDx > absDy && absDx > 20) dir = dx > 0 ? [1, 0] : [-1, 0];
         else if (absDy > absDx && absDy > 20) dir = dy > 0 ? [0, 1] : [0, -1];
         if (dir) {
-          const last =
-            queueRef.current[queueRef.current.length - 1] || dirRef.current;
+          const last = queueRef.current[queueRef.current.length - 1] || dirRef.current;
           if (!(dir[0] === -last[0] && dir[1] === -last[1])) {
             queueRef.current.push(dir);
             queueRef.current = queueRef.current.slice(-3);
@@ -660,23 +568,42 @@ export default function CanvasContribMap({
     };
   }, [isEditing]);
 
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!isEditing || !canvas) {
+      setHoverCell(null);
+      return;
+    }
+    const handleHover = (e: MouseEvent) => {
+      const rect = canvas.getBoundingClientRect();
+      const mx = e.clientX - rect.left;
+      const my = e.clientY - rect.top;
+      const cellX = Math.floor(mx / STEP) + target.current.x;
+      const cellY = Math.floor(my / STEP) + target.current.y;
+      setHoverCell({ x: cellX, y: cellY });
+    };
+    canvas.addEventListener('mousemove', handleHover);
+    return () => {
+      canvas.removeEventListener('mousemove', handleHover);
+      setHoverCell(null);
+    };
+  }, [isEditing, target]);
+
   const saveMap = async () => {
     const blocks = IMAGE_BLOCKS;
     const spacing = 3;
     const mosaicSpacing = blocks + spacing;
-    const offsetXs = [
-      imageOffsetX - mosaicSpacing,
-      imageOffsetX,
-      imageOffsetX + mosaicSpacing,
-    ];
+    const offsetXs = [imageOffsetX - mosaicSpacing, imageOffsetX, imageOffsetX + mosaicSpacing];
     const y0 = imageOffsetY + mosaicYOffset;
+    const originalMosaics = offsetXs.map(offX => ({ offsetX: offX, offsetY: y0, blocks }));
+    const allMosaics = [...originalMosaics, ...extraMosaics];
     const rows = Array.from({ length: ROWS }, (_, y) =>
       gridRef.current
         .map((col, x) => {
           if (
-            offsetXs.some(offX => x >= offX && x < offX + blocks) &&
-            y >= y0 &&
-            y < y0 + blocks
+            allMosaics.some(
+              m => x >= m.offsetX && x < m.offsetX + m.blocks && y >= m.offsetY && y < m.offsetY + m.blocks
+            )
           ) {
             return '0';
           }
@@ -700,7 +627,7 @@ export default function CanvasContribMap({
   };
 
   return (
-    <div className={`relative ${fontClass}`}>
+    <div className="relative">
       <canvas ref={canvasRef} className="block w-full h-full bg-[#0d1117]" />
       {tooltip.visible && (
         <div
@@ -716,8 +643,8 @@ export default function CanvasContribMap({
           style={{ zIndex: 20 }}
         >
           <span className="leading-snug text-center">
-            Welcome to my site! Feel free to move around and eat blocks using
-            the arrow keys. Hold space to boost. Hover over elements!
+            Welcome to my site! Feel free to move around and eat blocks using the arrow keys. Hold space to boost. Hover
+            over elements!
           </span>
           <button
             className="px-4 py-2 bg-white/20 backdrop-blur-sm border border-white/30 text-white rounded-md hover:bg-white/30 transition"
@@ -737,16 +664,10 @@ export default function CanvasContribMap({
       )}
       {isDev && isEditing && (
         <div className="absolute top-4 right-4 flex space-x-2 z-50">
-          <button
-            className="px-2 py-1 bg-green-600 text-white rounded"
-            onClick={saveMap}
-          >
+          <button className="px-2 py-1 bg-green-600 text-white rounded" onClick={saveMap}>
             Save
           </button>
-          <button
-            className="px-2 py-1 bg-red-600 text-white rounded"
-            onClick={() => window.location.reload()}
-          >
+          <button className="px-2 py-1 bg-red-600 text-white rounded" onClick={() => window.location.reload()}>
             Cancel
           </button>
         </div>
@@ -767,6 +688,12 @@ export default function CanvasContribMap({
       {toast.visible && (
         <div className="fixed top-4 right-4 bg-green-600 text-white px-4 py-2 rounded shadow-lg z-50">
           {toast.message}
+        </div>
+      )}
+
+      {isEditing && hoverCell && (
+        <div className="absolute top-0 left-0 m-2 p-1 bg-black/50 text-white text-sm z-50">
+          {hoverCell.x}, {hoverCell.y}
         </div>
       )}
     </div>
