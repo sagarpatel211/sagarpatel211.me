@@ -8,7 +8,7 @@ export default async function Page() {
 
   return (
     <main className="w-full h-full">
-      <CanvasContribMap grid={grid} imageSrc="/github.png" />
+      <CanvasContribMap grid={grid} />
     </main>
   );
 }

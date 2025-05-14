@@ -1,0 +1,18 @@
+[
+  {
+    "text": "SOFTWARE ENGINEER INTERN",
+    "x": 100,
+    "y": 50,
+    "color": "#FFFFFF",
+    "cellColorKey": "t",
+    "fontSize": 24
+  },
+  {
+    "text": "ANOTHER STRING",
+    "x": 200,
+    "y": 100,
+    "color": "#FF0000",
+    "cellColorKey": "t",
+    "fontSize": 18
+  }
+]

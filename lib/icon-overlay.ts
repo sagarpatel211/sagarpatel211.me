@@ -3,19 +3,37 @@ import { STEP } from '@/lib/constants';
 
 type Pos = { x: number; y: number };
 
-export type IconConfig = {
+type IconConfig = {
   offsetX: number;
   offsetY: number;
   size: number;
-  onClick: () => void;
+  width?: number;
+  onClick?: () => void;
   tooltipText: string;
+  experienceDetails?: {
+    title: string;
+    company: string;
+    period: string;
+    description?: string;
+  };
 };
 
 export function useIconOverlay(params: {
   canvasRef: React.RefObject<HTMLCanvasElement | null>;
   targetRef: React.MutableRefObject<Pos>;
   icons: IconConfig[];
-  setTooltip: (tip: { visible: boolean; x: number; y: number; text?: string }) => void;
+  setTooltip: (tip: {
+    visible: boolean;
+    x: number;
+    y: number;
+    text?: string;
+    experienceDetails?: {
+      title: string;
+      company: string;
+      period: string;
+      description?: string;
+    };
+  }) => void;
 }) {
   const { canvasRef, targetRef, icons, setTooltip } = params;
 
@@ -33,13 +51,16 @@ export function useIconOverlay(params: {
       const worldY = targetRef.current.y + cellY;
 
       for (const icon of icons) {
+        const iconWidth = icon.width ?? icon.size;
         if (
           worldX >= icon.offsetX &&
-          worldX < icon.offsetX + icon.size &&
+          worldX < icon.offsetX + iconWidth &&
           worldY >= icon.offsetY &&
           worldY < icon.offsetY + icon.size
         ) {
-          icon.onClick();
+          if (icon.onClick) {
+            icon.onClick();
+          }
           break;
         }
       }
@@ -56,9 +77,10 @@ export function useIconOverlay(params: {
 
       let hovered: IconConfig | undefined;
       for (const icon of icons) {
+        const iconWidth = icon.width ?? icon.size;
         if (
           worldX >= icon.offsetX &&
-          worldX < icon.offsetX + icon.size &&
+          worldX < icon.offsetX + iconWidth &&
           worldY >= icon.offsetY &&
           worldY < icon.offsetY + icon.size
         ) {
@@ -73,8 +95,9 @@ export function useIconOverlay(params: {
           x: e.clientX + 10,
           y: e.clientY + 10,
           text: hovered.tooltipText,
+          experienceDetails: hovered.experienceDetails,
         });
-        canvas.style.cursor = 'pointer';
+        canvas.style.cursor = hovered.onClick ? 'pointer' : 'default';
       } else {
         setTooltip({ visible: false, x: 0, y: 0 });
         canvas.style.cursor = 'default';

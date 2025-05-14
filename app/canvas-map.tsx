@@ -20,7 +20,9 @@ import {
 } from '@/lib/constants';
 import { PALETTE, SNAKE_COL } from '@/lib/colors';
 import { useIconOverlay } from '@/lib/icon-overlay';
-import { extraMosaics, getExtraOverlayIcons } from '@/lib/extra-mosaics';
+import { mosaics, MosaicConfig } from '@/lib/mosaics';
+import { roundRect } from '@/lib/canvas-utils';
+import { drawTextOnGrid } from '@/lib/text-renderer';
 
 type Pos = { x: number; y: number };
 
@@ -34,39 +36,26 @@ const DIRS: Record<string, [number, number]> = {
 const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
 const clamp = (v: number, min: number, max: number) => Math.max(min, Math.min(max, v));
 
-const roundRect = (
-  ctx: CanvasRenderingContext2D,
-  x: number,
-  y: number,
-  w: number,
-  h: number,
-  r: number,
-  fill: string
-) => {
-  ctx.beginPath();
-  ctx.moveTo(x + r, y);
-  ctx.lineTo(x + w - r, y);
-  ctx.quadraticCurveTo(x + w, y, x + w, y + r);
-  ctx.lineTo(x + w, y + h - r);
-  ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
-  ctx.lineTo(x + r, y + h);
-  ctx.quadraticCurveTo(x, y + h, x, y + h - r);
-  ctx.lineTo(x, y + r);
-  ctx.quadraticCurveTo(x, y, x + r, y);
-  ctx.closePath();
-  ctx.fillStyle = fill;
-  ctx.fill();
-};
-
 const isDev = process.env.NODE_ENV === 'development';
 
-export default function CanvasContribMap({ grid: initialGrid, imageSrc }: { grid: string[][]; imageSrc?: string }) {
+interface CanvasText {
+  text: string;
+  x: number;
+  y: number;
+  color: string;
+  cellColorKey: string;
+  fontSize: number;
+}
+
+export default function CanvasContribMap({ grid: initialGrid }: { grid: string[][] }) {
   const [showPopup, setShowPopup] = useState(false);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const gridCanvasRef = useRef<HTMLCanvasElement>(null);
   const minimapCanvasRef = useRef<HTMLCanvasElement>(null);
   const dpr = typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1;
   const gridRef = useRef<string[][]>(Array.from({ length: COLS }, (_, x) => initialGrid.map(row => row[x])));
+  const [fontLoaded, setFontLoaded] = useState(false);
+  const [isPaused, setIsPaused] = useState(false);
 
   const dirRef = useRef<[number, number]>([0, 1]);
   const queueRef = useRef<[number, number][]>([]);
@@ -81,17 +70,18 @@ export default function CanvasContribMap({ grid: initialGrid, imageSrc }: { grid
   const lengthRef = useRef(MAX_LEN);
   const target = useRef<Pos>({ ...initialHead });
   const smooth = useRef<Pos>({ ...initialHead });
-  const imgRef = useRef<HTMLImageElement | null>(null);
-
-  const imageOffsetX = Math.floor((COLS - IMAGE_BLOCKS) / 2);
-  const imageOffsetY = Math.floor((ROWS - IMAGE_BLOCKS) / 2);
-  const mosaicYOffset = Math.floor(snakeYOffset / 2);
 
   const [tooltip, setTooltip] = useState<{
     visible: boolean;
     x: number;
     y: number;
     text?: string;
+    experienceDetails?: {
+      title: string;
+      company: string;
+      period: string;
+      description?: string;
+    };
   }>({ visible: false, x: 0, y: 0, text: '' });
 
   const [isEditing, setIsEditing] = useState(false);
@@ -102,7 +92,52 @@ export default function CanvasContribMap({ grid: initialGrid, imageSrc }: { grid
     message: '',
   });
 
+  const [gridCanvasReady, setGridCanvasReady] = useState(false);
+  const [minimapCanvasReady, setMinimapCanvasReady] = useState(false);
   const [hoverCell, setHoverCell] = useState<{ x: number; y: number } | null>(null);
+  const [texts, setTexts] = useState<CanvasText[]>([]);
+
+  const CTX_IMAGE_BLOCKS = IMAGE_BLOCKS;
+  const CTX_IMAGE_SPACING = 3;
+  const CTX_MOSAIC_SPACING = CTX_IMAGE_BLOCKS + CTX_IMAGE_SPACING;
+
+  const imageOffsetX = Math.floor((COLS - CTX_IMAGE_BLOCKS) / 2);
+  const imageOffsetY = Math.floor((ROWS - CTX_IMAGE_BLOCKS) / 2);
+  const mosaicYOffset = Math.floor(snakeYOffset / 2);
+
+  const socialIconsOffsetXs = [imageOffsetX - CTX_MOSAIC_SPACING, imageOffsetX, imageOffsetX + CTX_MOSAIC_SPACING];
+  const socialIconsBaseY = imageOffsetY + mosaicYOffset;
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const preconnect = document.createElement('link');
+      preconnect.rel = 'preconnect';
+      preconnect.href = 'https://fonts.gstatic.com';
+      preconnect.crossOrigin = 'anonymous';
+      document.head.appendChild(preconnect);
+
+      const pixelFontLink = document.createElement('link');
+      pixelFontLink.href = 'https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap';
+      pixelFontLink.rel = 'stylesheet';
+      document.head.appendChild(pixelFontLink);
+
+      const checkFontLoaded = () => {
+        const testEl = document.createElement('span');
+        testEl.style.fontFamily = '"Press Start 2P", monospace';
+        testEl.style.fontSize = '0px';
+        testEl.style.visibility = 'hidden';
+        testEl.textContent = 'Test Font';
+        document.body.appendChild(testEl);
+
+        setTimeout(() => {
+          setFontLoaded(true);
+          document.body.removeChild(testEl);
+        }, 500);
+      };
+
+      document.fonts.ready.then(checkFontLoaded);
+    }
+  }, []);
 
   useEffect(() => {
     const off = document.createElement('canvas');
@@ -117,93 +152,120 @@ export default function CanvasContribMap({ grid: initialGrid, imageSrc }: { grid
       }
     }
 
-    const blocks = IMAGE_BLOCKS;
-    const spacing = 3;
-    const mosaicSpacing = blocks + spacing;
-    const offsetXs = [imageOffsetX - mosaicSpacing, imageOffsetX, imageOffsetX + mosaicSpacing];
-    const sources = ['/linkedin.png', imageSrc || '/github.png', '/email.png'];
-    offsetXs.forEach((offsetX, idx) => {
-      const img = new Image();
-      img.onload = () => {
-        const sw = img.width / blocks;
-        const sh = img.height / blocks;
-        const baseY = imageOffsetY + mosaicYOffset;
-        for (let ix = 0; ix < blocks; ix++) {
-          for (let iy = 0; iy < blocks; iy++) {
-            const sx = ix * sw;
-            const sy = iy * sh;
-            const dx = (offsetX + ix) * STEP;
-            const dy = (baseY + iy) * STEP;
-            gctx.save();
-            gctx.beginPath();
-            gctx.moveTo(dx + RADIUS, dy);
-            gctx.lineTo(dx + CELL - RADIUS, dy);
-            gctx.quadraticCurveTo(dx + CELL, dy, dx + CELL, dy + RADIUS);
-            gctx.lineTo(dx + CELL, dy + CELL - RADIUS);
-            gctx.quadraticCurveTo(dx + CELL, dy + CELL, dx + CELL - RADIUS, dy + CELL);
-            gctx.lineTo(dx + RADIUS, dy + CELL);
-            gctx.quadraticCurveTo(dx, dy + CELL, dx, dy + CELL - RADIUS);
-            gctx.lineTo(dx, dy + RADIUS);
-            gctx.quadraticCurveTo(dx, dy, dx + RADIUS, dy);
-            gctx.closePath();
-            gctx.clip();
-            gctx.drawImage(img, sx, sy, sw, sh, dx, dy, CELL, CELL);
-            gctx.restore();
-          }
-        }
-      };
-      img.src = sources[idx];
+    const mosaicsWithOffsetsCalculated: MosaicConfig[] = mosaics.map((m, idx) => {
+      if (idx < 3) {
+        return {
+          ...m,
+          offsetX: socialIconsOffsetXs[idx],
+          offsetY: socialIconsBaseY,
+        };
+      }
+      return m;
     });
 
-    extraMosaics.forEach(({ src, offsetX, offsetY, blocks }) => {
+    mosaicsWithOffsetsCalculated.forEach(mosaic => {
       const img = new Image();
       img.onload = () => {
-        const heightBlocks = blocks;
-        const widthBlocks = Math.round((img.width / img.height) * heightBlocks);
-        const sw2 = img.width / widthBlocks;
-        const sh2 = img.height / heightBlocks;
-        for (let ix = 0; ix < widthBlocks; ix++) {
-          for (let iy = 0; iy < heightBlocks; iy++) {
-            const sx2 = ix * sw2;
-            const sy2 = iy * sh2;
-            const dx2 = (offsetX + ix) * STEP;
-            const dy2 = (offsetY + iy) * STEP;
+        const cellCountForHeight = mosaic.blocks;
+
+        if (cellCountForHeight === 0) return;
+
+        const imageAspectRatio = img.width / img.height;
+        const idealCellCountForWidth = imageAspectRatio * cellCountForHeight;
+        const actualCellCountForWidth = Math.round(idealCellCountForWidth);
+
+        if (actualCellCountForWidth === 0) return;
+
+        const mosaicIdx = mosaics.findIndex(
+          m => m.src === mosaic.src && m.offsetX === mosaic.offsetX && m.offsetY === mosaic.offsetY
+        );
+        if (mosaicIdx >= 0) {
+          mosaics[mosaicIdx] = {
+            ...mosaics[mosaicIdx],
+            width: actualCellCountForWidth,
+          };
+        }
+
+        const sourcePixelWidthPerIdealCell = img.width / idealCellCountForWidth;
+        const sourcePixelHeightPerCell = img.height / cellCountForHeight;
+
+        let imageData: ImageData | null = null;
+        const tempCanvas = document.createElement('canvas');
+        const tempCtx = tempCanvas.getContext('2d');
+
+        const isFordOrHuawei = mosaic.src.includes('ford.png') || mosaic.src.includes('huawei.png');
+
+        if (isFordOrHuawei && tempCtx) {
+          tempCanvas.width = img.width;
+          tempCanvas.height = img.height;
+          tempCtx.drawImage(img, 0, 0);
+          imageData = tempCtx.getImageData(0, 0, img.width, img.height);
+        }
+
+        for (let iy = 0; iy < cellCountForHeight; iy++) {
+          for (let ix = 0; ix < actualCellCountForWidth; ix++) {
+            const sx = ix * sourcePixelWidthPerIdealCell;
+            const sy = iy * sourcePixelHeightPerCell;
+
+            const destCanvasX = (mosaic.offsetX + ix) * STEP;
+            const destCanvasY = (mosaic.offsetY + iy) * STEP;
+
+            if (mosaic.offsetX + ix >= COLS || mosaic.offsetY + iy >= ROWS) {
+              continue;
+            }
+
+            let skipTMarking = false;
+            if (isFordOrHuawei && imageData) {
+              const centerX = Math.floor(sx + sourcePixelWidthPerIdealCell / 2);
+              const centerY = Math.floor(sy + sourcePixelHeightPerCell / 2);
+              if (centerX < img.width && centerY < img.height) {
+                const pixelIndex = (centerY * img.width + centerX) * 4;
+                const alpha = imageData.data[pixelIndex + 3];
+                if (alpha < 50) {
+                  skipTMarking = true;
+                }
+              }
+            }
+
             gctx.save();
             gctx.beginPath();
-            gctx.moveTo(dx2 + RADIUS, dy2);
-            gctx.lineTo(dx2 + CELL - RADIUS, dy2);
-            gctx.quadraticCurveTo(dx2 + CELL, dy2, dx2 + CELL, dy2 + RADIUS);
-            gctx.lineTo(dx2 + CELL, dy2 + CELL - RADIUS);
-            gctx.quadraticCurveTo(dx2 + CELL, dy2 + CELL, dx2 + CELL - RADIUS, dy2 + CELL);
-            gctx.lineTo(dx2 + RADIUS, dy2 + CELL);
-            gctx.quadraticCurveTo(dx2, dy2 + CELL, dx2, dy2 + CELL - RADIUS);
-            gctx.lineTo(dx2, dy2 + RADIUS);
-            gctx.quadraticCurveTo(dx2, dy2, dx2 + RADIUS, dy2);
-            gctx.closePath();
+            roundRect(gctx, destCanvasX, destCanvasY, CELL, CELL, RADIUS, 'rgba(0,0,0,0)');
             gctx.clip();
-            gctx.drawImage(img, sx2, sy2, sw2, sh2, dx2, dy2, CELL, CELL);
+            gctx.drawImage(
+              img,
+              sx,
+              sy,
+              sourcePixelWidthPerIdealCell,
+              sourcePixelHeightPerCell,
+              destCanvasX,
+              destCanvasY,
+              CELL,
+              CELL
+            );
             gctx.restore();
-          }
-        }
-        for (let ix = 0; ix < widthBlocks; ix++) {
-          for (let iy = 0; iy < heightBlocks; iy++) {
-            gridRef.current[offsetX + ix][offsetY + iy] = '1';
+
+            const gridX = mosaic.offsetX + ix;
+            const gridY = mosaic.offsetY + iy;
+            if (gridX >= 0 && gridX < COLS && gridY >= 0 && gridY < ROWS) {
+              if (!skipTMarking) {
+                gridRef.current[gridX][gridY] = 't';
+              }
+            }
           }
         }
       };
-      img.src = src;
+      img.src = mosaic.src;
     });
+
     setShowPopup(true);
-  }, [initialGrid, imageSrc, imageOffsetX, imageOffsetY, mosaicYOffset]);
+    setGridCanvasReady(true);
+  }, [initialGrid]);
 
   useIconOverlay({
     canvasRef,
     targetRef: target,
     icons: [
       ...(['linkedin', 'github', 'email'] as const).map((key, idx) => {
-        const blocks = IMAGE_BLOCKS;
-        const spacing = 3;
-        const mosaicSpacing = blocks + spacing;
         const hrefMap: Record<string, string> = {
           linkedin: 'https://www.linkedin.com/in/sagarpatel211',
           github: 'https://github.com/sagarpatel211',
@@ -215,14 +277,23 @@ export default function CanvasContribMap({ grid: initialGrid, imageSrc }: { grid
           email: 'Email me: 2sagarpatel2@gmail.com',
         };
         return {
-          offsetX: [imageOffsetX - mosaicSpacing, imageOffsetX, imageOffsetX + mosaicSpacing][idx],
-          offsetY: imageOffsetY + mosaicYOffset,
-          size: blocks,
+          offsetX: socialIconsOffsetXs[idx],
+          offsetY: socialIconsBaseY,
+          size: CTX_IMAGE_BLOCKS,
           onClick: () => window.open(hrefMap[key], '_blank'),
           tooltipText: tooltipMap[key],
         };
       }),
-      ...getExtraOverlayIcons(),
+      ...mosaics
+        .filter((_, idx) => idx >= 3)
+        .map(mosaic => ({
+          offsetX: mosaic.offsetX,
+          offsetY: mosaic.offsetY,
+          size: mosaic.blocks,
+          width: mosaic.width,
+          tooltipText: mosaic.tooltipText || '',
+          experienceDetails: mosaic.experienceDetails,
+        })),
     ],
     setTooltip,
   });
@@ -248,6 +319,7 @@ export default function CanvasContribMap({ grid: initialGrid, imageSrc }: { grid
         );
       }
     }
+    setMinimapCanvasReady(true);
   }, [initialGrid]);
 
   useEffect(() => {
@@ -277,7 +349,7 @@ export default function CanvasContribMap({ grid: initialGrid, imageSrc }: { grid
 
   useEffect(() => {
     const tick = () => {
-      if (showPopup || isEditing) return;
+      if (showPopup || isEditing || isPaused) return;
       const reps = boostRef.current ? BOOST_MULT : 1;
       shakeIntensity.current = boostRef.current ? 2 + Math.random() * 2 : 0;
       for (let i = 0; i < reps; i++) {
@@ -296,38 +368,7 @@ export default function CanvasContribMap({ grid: initialGrid, imageSrc }: { grid
           const px = nx * STEP;
           const py = ny * STEP;
           gctx.clearRect(px, py, STEP, STEP);
-          const isImgBlock =
-            nx >= imageOffsetX &&
-            nx < imageOffsetX + IMAGE_BLOCKS &&
-            ny >= imageOffsetY &&
-            ny < imageOffsetY + IMAGE_BLOCKS;
-          if (isImgBlock && imgRef.current) {
-            const img = imgRef.current;
-            const sw = img.width / IMAGE_BLOCKS;
-            const sh = img.height / IMAGE_BLOCKS;
-            const ix = nx - imageOffsetX;
-            const iy = ny - imageOffsetY;
-            const sx = ix * sw;
-            const sy = iy * sh;
-            gctx.save();
-            gctx.beginPath();
-            gctx.moveTo(px + RADIUS, py);
-            gctx.lineTo(px + CELL - RADIUS, py);
-            gctx.quadraticCurveTo(px + CELL, py, px + CELL, py + RADIUS);
-            gctx.lineTo(px + CELL, py + CELL - RADIUS);
-            gctx.quadraticCurveTo(px + CELL, py + CELL, px + CELL - RADIUS, py + CELL);
-            gctx.lineTo(px + RADIUS, py + CELL);
-            gctx.quadraticCurveTo(px, py + CELL, px, py + CELL - RADIUS);
-            gctx.lineTo(px, py + RADIUS);
-            gctx.quadraticCurveTo(px, py, px + RADIUS, py);
-            gctx.closePath();
-            gctx.clip();
-            gctx.filter = 'grayscale(100%) brightness(200%) opacity(0.3)';
-            gctx.drawImage(img, sx, sy, sw, sh, px, py, CELL, CELL);
-            gctx.restore();
-          } else {
-            roundRect(gctx, px, py, CELL, CELL, RADIUS, PALETTE['0']);
-          }
+          roundRect(gctx, px, py, CELL, CELL, RADIUS, PALETTE[gridRef.current[nx][ny]]);
           const mctx = minimapCanvasRef.current!.getContext('2d')!;
           const mx = nx * MINIMAP_SCALE;
           const my = ny * MINIMAP_SCALE;
@@ -369,6 +410,12 @@ export default function CanvasContribMap({ grid: initialGrid, imageSrc }: { grid
         smooth.current = { x: tx, y: ty };
         return;
       }
+
+      if (e.key === 'p' || e.key === 'P') {
+        setIsPaused(prev => !prev);
+        return;
+      }
+
       if (e.code === 'Space') {
         boostRef.current = true;
       } else {
@@ -393,7 +440,7 @@ export default function CanvasContribMap({ grid: initialGrid, imageSrc }: { grid
       window.removeEventListener('keydown', down);
       window.removeEventListener('keyup', up);
     };
-  }, [imageOffsetX, imageOffsetY, showPopup, isEditing]);
+  }, [showPopup, isEditing, isPaused]);
 
   useEffect(() => {
     const canvas = canvasRef.current!;
@@ -589,28 +636,40 @@ export default function CanvasContribMap({ grid: initialGrid, imageSrc }: { grid
     };
   }, [isEditing, target]);
 
+  useEffect(() => {
+    fetch('/texts.json')
+      .then(res => res.json())
+      .then(setTexts)
+      .catch(() => setTexts([]));
+  }, []);
+
+  useEffect(() => {
+    if (
+      gridCanvasReady &&
+      minimapCanvasReady &&
+      fontLoaded &&
+      gridCanvasRef.current &&
+      minimapCanvasRef.current &&
+      initialGrid
+    ) {
+      const gctx = gridCanvasRef.current.getContext('2d')!;
+      const mctx = minimapCanvasRef.current.getContext('2d')!;
+
+      texts.forEach(t => {
+        drawTextOnGrid(gctx, mctx, gridRef, t.text, t.x, t.y, t.cellColorKey, t.color, t.fontSize);
+      });
+    }
+  }, [initialGrid, gridCanvasReady, minimapCanvasReady, fontLoaded, texts]);
+
   const saveMap = async () => {
-    const blocks = IMAGE_BLOCKS;
-    const spacing = 3;
-    const mosaicSpacing = blocks + spacing;
-    const offsetXs = [imageOffsetX - mosaicSpacing, imageOffsetX, imageOffsetX + mosaicSpacing];
-    const y0 = imageOffsetY + mosaicYOffset;
-    const originalMosaics = offsetXs.map(offX => ({ offsetX: offX, offsetY: y0, blocks }));
-    const allMosaics = [...originalMosaics, ...extraMosaics];
-    const rows = Array.from({ length: ROWS }, (_, y) =>
-      gridRef.current
-        .map((col, x) => {
-          if (
-            allMosaics.some(
-              m => x >= m.offsetX && x < m.offsetX + m.blocks && y >= m.offsetY && y < m.offsetY + m.blocks
-            )
-          ) {
-            return '0';
-          }
-          return col[y];
-        })
-        .join('')
-    );
+    const rows = Array.from({ length: ROWS }, (_, y) => {
+      let rowString = '';
+      for (let x = 0; x < COLS; x++) {
+        rowString += gridRef.current[x][y];
+      }
+      return rowString;
+    });
+
     try {
       await fetch('/api/save-map', {
         method: 'POST',
@@ -627,27 +686,43 @@ export default function CanvasContribMap({ grid: initialGrid, imageSrc }: { grid
   };
 
   return (
-    <div className="relative">
-      <canvas ref={canvasRef} className="block w-full h-full bg-[#0d1117]" />
+    <div className="relative h-screen w-full overflow-hidden">
+      <canvas ref={canvasRef} className="block w-full h-full bg-[#0d1117]" style={{ touchAction: 'none' }} />
       {tooltip.visible && (
         <div
-          className="absolute pointer-events-none px-3 py-2 rounded-lg text-white text-sm bg-white/10 backdrop-blur-md shadow-md"
+          className={`absolute pointer-events-none rounded-lg text-white shadow-lg ${tooltip.experienceDetails ? 'bg-black/80 p-4 max-w-md' : 'bg-white/10 backdrop-blur-md px-3 py-2 text-base'}`}
           style={{ left: tooltip.x, top: tooltip.y }}
         >
-          {tooltip.text}
+          {tooltip.experienceDetails ? (
+            <div className="flex flex-col gap-2">
+              <div className="font-bold text-xl">{tooltip.experienceDetails.title}</div>
+              <div className="text-lg">{tooltip.experienceDetails.company}</div>
+              <div className="text-base text-gray-300">{tooltip.experienceDetails.period}</div>
+              {tooltip.experienceDetails.description && (
+                <div className="text-base text-gray-200 mt-1">{tooltip.experienceDetails.description}</div>
+              )}
+            </div>
+          ) : (
+            tooltip.text
+          )}
+        </div>
+      )}
+      {isPaused && (
+        <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 bg-black/70 text-white px-8 py-4 rounded-lg text-3xl font-bold font-sans">
+          PAUSED
         </div>
       )}
       {showPopup && (
         <div
-          className="absolute bottom-8 left-1/2 transform -translate-x-1/2 bg-[#2e2e2e]/70 backdrop-blur-sm text-white text-lg px-4 py-4 rounded-lg shadow-xl flex flex-col items-center space-y-4 sm:flex-row sm:space-y-0 sm:space-x-4 w-11/12 max-w-sm"
+          className="absolute bottom-8 left-1/2 transform -translate-x-1/2 bg-[#2e2e2e]/70 backdrop-blur-sm text-white text-3xl px-12 py-10 rounded-lg shadow-xl flex flex-col items-center space-y-8 sm:flex-row sm:space-y-0 sm:space-x-10 w-11/12 max-w-2xl md:max-w-3xl"
           style={{ zIndex: 20 }}
         >
-          <span className="leading-snug text-center">
-            Welcome to my site! Feel free to move around and eat blocks using the arrow keys. Hold space to boost. Hover
-            over elements!
+          <span className="leading-snug text-center font-sans">
+            Welcome to my site! Feel free to move around and eat blocks using the arrow keys.
+            <strong className="font-semibold"> Hold space to boost.</strong> Press P to pause. Hover over elements!
           </span>
           <button
-            className="px-4 py-2 bg-white/20 backdrop-blur-sm border border-white/30 text-white rounded-md hover:bg-white/30 transition"
+            className={`px-6 py-3 text-xl font-sans bg-white/20 hover:bg-white/30 backdrop-blur-sm border border-white/30 text-white rounded-md transition whitespace-nowrap flex items-center gap-2`}
             onClick={() => setShowPopup(false)}
           >
             Dismiss

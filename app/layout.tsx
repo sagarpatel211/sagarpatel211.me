@@ -1,17 +1,22 @@
 import type { Metadata } from 'next';
-import { DM_Sans } from 'next/font/google';
+import { Raleway, Press_Start_2P } from 'next/font/google';
 import './globals.css';
 
-
-const dmSans = DM_Sans({
-  variable: '--font-dm-sans',
+const raleway = Raleway({
   subsets: ['latin'],
-  weight: ['400', '500', '700'],
+  weight: ['400', '500', '700', '900'],
+  variable: '--font-raleway',
+});
+
+const pressStart2P = Press_Start_2P({
+  subsets: ['latin'],
+  weight: '400',
+  variable: '--font-press-start-2p',
 });
 
 export const metadata: Metadata = {
-  title: 'sagarpatel211',
-  description: 'Personal website of Sagar Patel!',
+  title: 'Sagar Patel',
+  description: 'Software Engineer. Gamer. Thinker.',
 };
 
 export default function RootLayout({
@@ -21,7 +26,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body className={`${dmSans.variable} antialiased`}>{children}</body>
+      <body className={`${raleway.variable} ${pressStart2P.variable} font-sans`}>{children}</body>
     </html>
   );
 }

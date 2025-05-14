@@ -23,6 +23,7 @@ export const PALETTE: Record<string, string> = {
   p: '#a56eff', // Purple level 4
   q: '#000000', // Black
   r: '#ffffff', // White
+  t: '#161b22', // Text cell, same as background
 };
 
 export const SNAKE_COL = '#c084fc';
