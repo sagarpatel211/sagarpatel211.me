@@ -132,4 +132,11 @@ export const mosaics: MosaicConfig[] = [
     blocks: 8,
     tooltipText: 'Kotlin',
   },
+  {
+    src: '/images/java.png',
+    offsetX: 247,
+    offsetY: 190,
+    blocks: 8,
+    tooltipText: 'Java',
+  },
 ];
