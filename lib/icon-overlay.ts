@@ -16,6 +16,14 @@ type IconConfig = {
     period: string;
     description?: string;
   };
+  projectDetails?: {
+    title: string;
+    tech: string[];
+    description: string;
+    stars?: number;
+    forks?: number;
+    url: string;
+  };
 };
 
 export function useIconOverlay(params: {
@@ -32,6 +40,14 @@ export function useIconOverlay(params: {
       company: string;
       period: string;
       description?: string;
+    };
+    projectDetails?: {
+      title: string;
+      tech: string[];
+      description: string;
+      stars?: number;
+      forks?: number;
+      url: string;
     };
   }) => void;
 }) {
@@ -96,6 +112,7 @@ export function useIconOverlay(params: {
           y: e.clientY + 10,
           text: hovered.tooltipText,
           experienceDetails: hovered.experienceDetails,
+          projectDetails: hovered.projectDetails,
         });
         canvas.style.cursor = hovered.onClick ? 'pointer' : 'default';
       } else {

@@ -12,6 +12,14 @@ export interface MosaicConfig {
     period: string;
     description?: string;
   };
+  projectDetails?: {
+    title: string;
+    tech: string[];
+    description: string;
+    stars?: number;
+    forks?: number;
+    url: string;
+  };
 }
 
 export const mosaics: MosaicConfig[] = [
@@ -138,5 +146,55 @@ export const mosaics: MosaicConfig[] = [
     offsetY: 190,
     blocks: 8,
     tooltipText: 'Java',
+  },
+  // GitHub Project Cards
+  {
+    src: '/images/1.png',
+    offsetX: 140,
+    offsetY: 130,
+    blocks: 18,
+    tooltipText: 'Portfolio Website',
+    projectDetails: {
+      title: 'Portfolio Website',
+      tech: ['Next.js', 'TypeScript', 'Tailwind CSS'],
+      description:
+        'Interactive portfolio website with a unique canvas-based UI featuring a snake game that interacts with displayed content.',
+      stars: 12,
+      forks: 3,
+      url: 'https://github.com/sagarpatel211/sagarpatel211.me',
+    },
+    href: 'https://github.com/sagarpatel211/sagarpatel211.me',
+  },
+  {
+    src: '/images/2.png',
+    offsetX: 140,
+    offsetY: 160,
+    blocks: 18,
+    tooltipText: 'Project #1',
+    projectDetails: {
+      title: 'AI Chatbot',
+      tech: ['Python', 'TensorFlow', 'Flask'],
+      description: 'A conversational AI assistant that uses state-of-the-art NLP models to provide helpful responses.',
+      stars: 45,
+      forks: 12,
+      url: 'https://github.com/sagarpatel211/ai-chatbot',
+    },
+    href: 'https://github.com/sagarpatel211/ai-chatbot',
+  },
+  {
+    src: '/images/3.png',
+    offsetX: 170,
+    offsetY: 130,
+    blocks: 18,
+    tooltipText: 'Project #2',
+    projectDetails: {
+      title: 'Autonomous Robot',
+      tech: ['C++', 'ROS', 'OpenCV'],
+      description: 'An autonomous robot platform that can navigate complex environments using computer vision.',
+      stars: 28,
+      forks: 7,
+      url: 'https://github.com/sagarpatel211/autonomous-robot',
+    },
+    href: 'https://github.com/sagarpatel211/autonomous-robot',
   },
 ];

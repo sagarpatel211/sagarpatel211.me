@@ -82,6 +82,14 @@ export default function CanvasContribMap({ grid: initialGrid }: { grid: string[]
       period: string;
       description?: string;
     };
+    projectDetails?: {
+      title: string;
+      tech: string[];
+      description: string;
+      stars?: number;
+      forks?: number;
+      url: string;
+    };
   }>({ visible: false, x: 0, y: 0, text: '' });
 
   const [isEditing, setIsEditing] = useState(false);
@@ -690,7 +698,11 @@ export default function CanvasContribMap({ grid: initialGrid }: { grid: string[]
       <canvas ref={canvasRef} className="block w-full h-full bg-[#0d1117]" style={{ touchAction: 'none' }} />
       {tooltip.visible && (
         <div
-          className={`absolute pointer-events-none rounded-lg text-white shadow-lg ${tooltip.experienceDetails ? 'bg-black/80 p-4 max-w-md' : 'bg-white/10 backdrop-blur-md px-3 py-2 text-base'}`}
+          className={`absolute pointer-events-none rounded-lg text-white shadow-lg ${
+            tooltip.experienceDetails || tooltip.projectDetails
+              ? 'bg-black/80 p-4 max-w-md'
+              : 'bg-white/10 backdrop-blur-md px-3 py-2 text-base'
+          }`}
           style={{ left: tooltip.x, top: tooltip.y }}
         >
           {tooltip.experienceDetails ? (
@@ -701,6 +713,31 @@ export default function CanvasContribMap({ grid: initialGrid }: { grid: string[]
               {tooltip.experienceDetails.description && (
                 <div className="text-base text-gray-200 mt-1">{tooltip.experienceDetails.description}</div>
               )}
+            </div>
+          ) : tooltip.projectDetails ? (
+            <div className="flex flex-col gap-2">
+              <div className="font-bold text-xl">{tooltip.projectDetails.title}</div>
+              <div className="flex flex-wrap gap-2 mt-1">
+                {tooltip.projectDetails.tech.map(tech => (
+                  <span key={tech} className="px-2 py-1 bg-blue-900/50 text-blue-200 text-xs rounded-full">
+                    {tech}
+                  </span>
+                ))}
+              </div>
+              <div className="text-base text-gray-200 mt-1">{tooltip.projectDetails.description}</div>
+              <div className="flex items-center gap-4 mt-1 text-gray-300">
+                {tooltip.projectDetails.stars !== undefined && (
+                  <span className="flex items-center gap-1 text-yellow-300">
+                    <span>★</span> {tooltip.projectDetails.stars}
+                  </span>
+                )}
+                {tooltip.projectDetails.forks !== undefined && (
+                  <span className="flex items-center gap-1">
+                    <span>🍴</span> {tooltip.projectDetails.forks}
+                  </span>
+                )}
+              </div>
+              <div className="text-xs text-blue-300 mt-1 underline">{tooltip.projectDetails.url}</div>
             </div>
           ) : (
             tooltip.text
